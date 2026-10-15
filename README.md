@@ -32,8 +32,8 @@ A local [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server t
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/librelink-mcp-server.git
-cd librelink-mcp-server
+git clone https://github.com/donnycrash/librelink-mcp-http.git
+cd librelink-mcp-http
 
 # Install dependencies
 npm install
