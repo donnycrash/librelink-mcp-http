@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 
 import { spawn } from 'child_process';
-import { createWriteStream } from 'fs';
+import { createWriteStream, mkdtempSync, rmSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
 
 /**
  * Test script for LibreLink MCP Server
@@ -12,6 +14,9 @@ class MCPTester {
   constructor() {
     this.server = null;
     this.testResults = [];
+    // This suite calls configure_credentials with dummy values, so it must never
+    // point at the real config in ~/.librelink-mcp.
+    this.configDir = mkdtempSync(join(tmpdir(), 'librelink-mcp-test-'));
   }
 
   log(message) {
@@ -23,8 +28,10 @@ class MCPTester {
     this.log('Starting MCP server...');
     
     this.server = spawn('node', ['dist/index.js'], {
-      stdio: ['pipe', 'pipe', 'pipe']
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: { ...process.env, LIBRELINK_MCP_CONFIG_DIR: this.configDir }
     });
+    this.log(`Using throwaway config dir: ${this.configDir}`);
 
     this.server.stderr.on('data', (data) => {
       const message = data.toString().trim();
@@ -245,6 +252,9 @@ class MCPTester {
       
       this.log('✅ Server stopped');
     }
+
+    rmSync(this.configDir, { recursive: true, force: true });
+    this.log('✅ Throwaway config removed');
   }
 
   async runAllTests() {

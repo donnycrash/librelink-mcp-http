@@ -87,10 +87,10 @@ class RealDataTester {
       
       if (response.result?.content) {
         const glucose = JSON.parse(response.result.content[0].text);
-        this.log(`✅ Current glucose: ${glucose.current_glucose} mg/dL`);
+        this.log(`✅ Current glucose: ${glucose.current_glucose} ${glucose.units || 'mg/dL'}`);
         this.log(`   Trend: ${glucose.trend}`);
         this.log(`   Status: ${glucose.status}`);
-        this.log(`   Time: ${new Date(glucose.timestamp).toLocaleTimeString()}`);
+        this.log(`   Time: ${glucose.timestamp_local}`);
         return true;
       }
     } catch (error) {
@@ -122,8 +122,8 @@ class RealDataTester {
         if (history.readings && history.readings.length > 0) {
           const latest = history.readings[history.readings.length - 1];
           const oldest = history.readings[0];
-          this.log(`   Range: ${oldest.value} - ${latest.value} mg/dL`);
-          this.log(`   Latest: ${latest.value} mg/dL at ${new Date(latest.timestamp).toLocaleTimeString()}`);
+          this.log(`   Range: ${oldest.value} - ${latest.value} ${history.units || 'mg/dL'}`);
+          this.log(`   Latest: ${latest.value} ${history.units || 'mg/dL'} at ${new Date(latest.timestamp).toLocaleTimeString()}`);
         }
         return true;
       }

@@ -1,5 +1,7 @@
+import { GlucoseUnits } from './units.js';
+
 export interface GlucoseReading {
-  value: number;           // mg/dL glucose value
+  value: number;           // mg/dL glucose value (converted only at output)
   timestamp: Date;         // Reading timestamp
   trend: TrendType;        // Arrow direction (up/down/stable)
   isHigh: boolean;         // Above target range
@@ -26,8 +28,10 @@ export interface HistoricalData {
 export interface SensorInfo {
   deviceId: string;
   serialNumber: string;
-  activationTime: Date;
-  state: string;           // "Active", "Expired", etc.
+  activationTime: Date;    // Sensor applied; from the API's epoch-seconds field
+  warmupMinutes: number;   // Warmup period reported by the API
+  readyTime: Date;         // activation + warmup -- what the LibreLink app calls the start
+  state: string;           // "Warming up", "Active", "Unknown"
   deviceType: string;      // "FreeStyle Libre 3", etc.
 }
 
@@ -45,8 +49,11 @@ export interface LibreLinkConfig {
     ttl_minutes: number;     // Cache time-to-live
   };
   ranges: {
-    target_low: number;      // Target range low (default: 70)
-    target_high: number;     // Target range high (default: 180)
+    target_low: number;      // Target range low, always mg/dL (default: 70)
+    target_high: number;     // Target range high, always mg/dL (default: 180)
+  };
+  display: {
+    units: GlucoseUnits;     // Output unit only; internals stay mg/dL
   };
 }
 

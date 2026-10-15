@@ -131,10 +131,10 @@ class RealConnectionTester {
         try {
           const glucose = JSON.parse(content);
           this.log('🎉 SUCCESS! Got glucose reading:');
-          this.log(`   Current glucose: ${glucose.current_glucose} mg/dL`);
+          this.log(`   Current glucose: ${glucose.current_glucose} ${glucose.units || 'mg/dL'}`);
           this.log(`   Trend: ${glucose.trend}`);
           this.log(`   Status: ${glucose.status}`);
-          this.log(`   Timestamp: ${glucose.timestamp}`);
+          this.log(`   Timestamp: ${glucose.timestamp_local} (${glucose.timezone})`);
           return true;
         } catch (e) {
           this.log(`❌ Error parsing glucose data: ${content}`);

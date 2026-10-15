@@ -8,11 +8,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Build TypeScript**: `npm run build`
 - **Type checking**: `npm run typecheck` 
 - **Development mode**: `npm run dev` (runs with ts-node)
+- **Run stdio server**: `npm start`
+- **Run HTTP server**: `MCP_AUTH_TOKEN=<token> npm run start:http` (listens on `PORT`, default 3000)
+- **Build container**: `docker build -t librelink-mcp .` (runs the HTTP entrypoint)
 
 ### Testing
 - **Run all tests**: `npm test`
 - **MCP protocol tests**: `npm run test:mcp`
 - **Analytics module tests**: `npm run test:analytics`
+- **Config env override tests**: `npm run test:config`
+- **HTTP entrypoint tests**: `npm run test:http`
 - **Test real LibreLink connection**: `node test-real-connection.js`
 - **Test with real glucose data**: `node test-real-data.js`
 
@@ -25,7 +30,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### Core Components
 
-1. **MCP Server** (`src/index.ts`): Main entry point implementing 8 MCP tools for glucose monitoring:
+1. **MCP Server** (`src/index.ts`): Exports `createServer()` and the stdio entry point. Implements 9 MCP tools for glucose monitoring:
    - `get_current_glucose` - Real-time glucose readings
    - `get_glucose_history` - Historical data retrieval
    - `get_glucose_stats` - Time-in-range and statistics
@@ -33,6 +38,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
    - `get_sensor_info` - Sensor status information
    - `configure_credentials` - LibreLink authentication setup
    - `configure_ranges` - Target glucose range configuration
+   - `configure_units` - Switch display between mg/dL and mmol/L
    - `validate_connection` - Connection testing
 
 2. **LibreLink Client** (`src/librelink-client.ts`): Wrapper around the unofficial LibreLink API with:
@@ -49,8 +55,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
    - Postprandial response analysis
    - Overnight glucose stability metrics
 
-4. **Configuration Management** (`src/config.ts`): Handles secure credential storage:
+4. **HTTP Entrypoint** (`src/http.ts`): Streamable HTTP transport for hosted deployments (Northflank, Docker). Serves `POST /mcp` behind a bearer token (`MCP_AUTH_TOKEN`, required) and `GET /health`. Stateless: a fresh `Server` per request.
+
+5. **Configuration Management** (`src/config.ts`): Handles secure credential storage:
    - Stores config in `~/.librelink-mcp/config.json`
+   - `LIBRELINK_EMAIL` / `LIBRELINK_PASSWORD` / `LIBRELINK_REGION` / `LIBRELINK_UNITS` env vars override the file
    - Automatically sets file permissions to 600 (user-only)
    - Supports credential updates and range configuration
 

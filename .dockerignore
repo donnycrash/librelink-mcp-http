@@ -1,0 +1,10 @@
+node_modules
+dist
+.git
+config
+*.md
+test-*.js
+debug-connections.js
+diagnose-account.js
+claude-desktop-config-example.json
+.env*

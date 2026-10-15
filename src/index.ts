@@ -13,30 +13,36 @@ import { LibreLinkClient } from './librelink-client.js';
 import { GlucoseAnalytics } from './glucose-analytics.js';
 import { ConfigManager } from './config.js';
 import { MCPError } from './types.js';
-
-const server = new Server(
-  {
-    name: 'librelink-mcp-server',
-    version: '1.0.0'
-  },
-  {
-    capabilities: {
-      tools: {}
-    }
-  }
-);
+import { GlucoseUnits, toDisplay, fromDisplay, formatValue, formatRange } from './units.js';
 
 const configManager = new ConfigManager();
 let client: LibreLinkClient | null = null;
 let analytics: GlucoseAnalytics | null = null;
 
 // Initialize client if configured
-function initializeClient(): void {
+export function initializeClient(): void {
   const config = configManager.getConfig();
   if (configManager.isConfigured()) {
     client = new LibreLinkClient(config);
     analytics = new GlucoseAnalytics(config);
   }
+}
+
+// Times come back as UTC instants; render local as well so they can be read
+// against a clock without mental conversion.
+const LOCAL_TZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+function formatLocal(date: Date): string {
+  // Undefined locale so the host's own formatting conventions apply.
+  return date.toLocaleString(undefined, {
+    timeZone: LOCAL_TZ,
+    dateStyle: 'medium',
+    timeStyle: 'medium'
+  });
+}
+
+function displayUnits(): GlucoseUnits {
+  return configManager.getConfig().display.units;
 }
 
 // Error handler
@@ -62,10 +68,13 @@ function handleError(error: any): any {
 }
 
 // Tool definitions
-const tools: Tool[] = [
+function buildTools(): Tool[] {
+  const units = displayUnits();
+  const ranges = configManager.getConfig().ranges;
+  return [
   {
     name: 'get_current_glucose',
-    description: 'Get the most recent glucose reading from your FreeStyle Libre sensor. Returns current glucose value in mg/dL, trend direction (rising/falling/stable), and whether the value is in target range. Use this for real-time glucose monitoring.',
+    description: `Get the most recent glucose reading from your FreeStyle Libre sensor. Returns current glucose value in ${units}, trend direction (rising/falling/stable), and whether the value is in target range. Use this for real-time glucose monitoring.`,
     inputSchema: {
       type: 'object',
       properties: {},
@@ -149,20 +158,35 @@ const tools: Tool[] = [
   },
   {
     name: 'configure_ranges',
-    description: 'Customize your target glucose range for personalized time-in-range calculations. Standard range is 70-180 mg/dL, but your healthcare provider may recommend different targets based on your individual needs.',
+    description: `Customize your target glucose range for personalized time-in-range calculations. Values are given in ${units}. Standard range is ${formatRange(70, 180, units)}, but your healthcare provider may recommend different targets based on your individual needs.`,
     inputSchema: {
       type: 'object',
       properties: {
         target_low: {
           type: 'number',
-          description: 'Lower bound of target range in mg/dL. Common values: 70 (standard), 80 (tighter control), 60 (athletic)'
+          description: `Lower bound of target range in ${units}. Common values: ${toDisplay(70, units)} (standard), ${toDisplay(80, units)} (tighter control), ${toDisplay(60, units)} (athletic)`
         },
         target_high: {
           type: 'number',
-          description: 'Upper bound of target range in mg/dL. Common values: 180 (standard), 140 (tighter control), 200 (relaxed)'
+          description: `Upper bound of target range in ${units}. Common values: ${toDisplay(180, units)} (standard), ${toDisplay(140, units)} (tighter control), ${toDisplay(200, units)} (relaxed)`
         }
       },
       required: ['target_low', 'target_high']
+    }
+  },
+  {
+    name: 'configure_units',
+    description: `Set the glucose unit used in all output. Currently ${units}. Use mmol/L for the UK, Europe, South Africa, Australia and most of the world; mg/dL for the US. Target ranges are preserved across the change (currently ${formatRange(ranges.target_low, ranges.target_high, units)}).`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        units: {
+          type: 'string',
+          enum: ['mg/dL', 'mmol/L'],
+          description: 'Glucose unit for all reported values'
+        }
+      },
+      required: ['units']
     }
   },
   {
@@ -174,15 +198,12 @@ const tools: Tool[] = [
       required: []
     }
   }
-];
+  ];
+}
 
-// List tools handler
-server.setRequestHandler(ListToolsRequestSchema, async () => {
-  return { tools };
-});
+type CallToolRequest = z.infer<typeof CallToolRequestSchema>;
 
-// Call tool handler
-server.setRequestHandler(CallToolRequestSchema, async (request) => {
+async function callTool(request: CallToolRequest) {
   const { name, arguments: args } = request.params;
 
   try {
@@ -197,8 +218,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           content: [{
             type: 'text',
             text: JSON.stringify({
-              current_glucose: reading.value,
-              timestamp: reading.timestamp,
+              current_glucose: toDisplay(reading.value, displayUnits()),
+              units: displayUnits(),
+              timestamp_local: formatLocal(reading.timestamp),
+              timestamp_utc: reading.timestamp.toISOString(),
+              timezone: LOCAL_TZ,
               trend: reading.trend,
               status: reading.isHigh ? 'High' : reading.isLow ? 'Low' : 'Normal',
               color: reading.color
@@ -214,14 +238,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
         const hours = (args?.hours as number) || 24;
         const history = await client.getGlucoseHistory(hours);
-        
+        const units = displayUnits();
+
         return {
           content: [{
             type: 'text',
             text: JSON.stringify({
               period_hours: hours,
               total_readings: history.length,
-              readings: history
+              units,
+              readings: history.map(r => ({ ...r, value: toDisplay(r.value, units) }))
             }, null, 2)
           }]
         };
@@ -235,22 +261,27 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const days = (args?.days as number) || 7;
         const readings = await client.getGlucoseHistory(days * 24);
         const stats = analytics.calculateGlucoseStats(readings);
-        
+        const units = displayUnits();
+        const ranges = configManager.getConfig().ranges;
+
         return {
           content: [{
             type: 'text',
             text: JSON.stringify({
               analysis_period_days: days,
-              average_glucose: stats.average,
-              glucose_management_indicator: stats.gmi,
+              units,
+              average_glucose: toDisplay(stats.average, units),
+              // GMI is an estimated A1C percentage, not a glucose concentration
+              glucose_management_indicator_percent: stats.gmi,
               time_in_range: {
-                target_70_180: stats.timeInRange,
-                below_70: stats.timeBelowRange,
-                above_180: stats.timeAboveRange
+                target_range: formatRange(ranges.target_low, ranges.target_high, units),
+                in_range_percent: stats.timeInRange,
+                below_range_percent: stats.timeBelowRange,
+                above_range_percent: stats.timeAboveRange
               },
               variability: {
-                standard_deviation: stats.standardDeviation,
-                coefficient_of_variation: stats.coefficientOfVariation
+                standard_deviation: toDisplay(stats.standardDeviation, units),
+                coefficient_of_variation_percent: stats.coefficientOfVariation
               }
             }, null, 2)
           }]
@@ -266,16 +297,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const daysToAnalyze = period === 'daily' ? 1 : period === 'weekly' ? 7 : 30;
         const readings = await client.getGlucoseHistory(daysToAnalyze * 24);
         const trends = analytics.analyzeTrends(readings, period);
+        const units = displayUnits();
         
         return {
           content: [{
             type: 'text',
             text: JSON.stringify({
               period: period,
+              units,
               patterns: trends.patterns,
               dawn_phenomenon: trends.dawnPhenomenon,
-              meal_response_average: trends.mealResponse,
-              overnight_stability: trends.overnightStability
+              meal_response_average: toDisplay(trends.mealResponse, units),
+              overnight_stability: toDisplay(trends.overnightStability, units)
             }, null, 2)
           }]
         };
@@ -291,7 +324,19 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           content: [{
             type: 'text',
             text: JSON.stringify({
-              active_sensors: sensors,
+              timezone: LOCAL_TZ,
+              active_sensors: sensors.map(s => ({
+                device_id: s.deviceId,
+                serial_number: s.serialNumber,
+                device_type: s.deviceType,
+                state: s.state,
+                applied_local: formatLocal(s.activationTime),
+                applied_utc: s.activationTime.toISOString(),
+                warmup_minutes: s.warmupMinutes,
+                // What the LibreLink app shows as the sensor start
+                started_local: formatLocal(s.readyTime),
+                started_utc: s.readyTime.toISOString()
+              })),
               sensor_count: sensors.length
             }, null, 2)
           }]
@@ -327,15 +372,34 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           target_high: number 
         };
 
-        configManager.updateRanges(target_low, target_high);
-        
+        const units = displayUnits();
+        configManager.updateRanges(
+          fromDisplay(target_low, units),
+          fromDisplay(target_high, units)
+        );
+
         // Reinitialize client with new ranges
         initializeClient();
 
         return {
           content: [{
             type: 'text',
-            text: `Target glucose ranges updated: ${target_low}-${target_high} mg/dL`
+            text: `Target glucose ranges updated: ${formatValue(fromDisplay(target_low, units), units)}-${formatValue(fromDisplay(target_high, units), units)} ${units}`
+          }]
+        };
+      }
+
+      case 'configure_units': {
+        const { units } = args as { units: GlucoseUnits };
+
+        configManager.updateUnits(units);
+        initializeClient();
+
+        const ranges = configManager.getConfig().ranges;
+        return {
+          content: [{
+            type: 'text',
+            text: `Glucose units set to ${units}. Target range is now shown as ${formatRange(ranges.target_low, ranges.target_high, units)}.`
           }]
         };
       }
@@ -362,14 +426,26 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   } catch (error) {
     return handleError(error);
   }
-});
+}
+
+// One Server instance can only be bound to a single transport, so the HTTP
+// entrypoint needs a fresh one per connection. Client and config stay shared.
+export function createServer(): Server {
+  const server = new Server(
+    { name: 'librelink-mcp-server', version: '1.0.0' },
+    { capabilities: { tools: {} } }
+  );
+  server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: buildTools() }));
+  server.setRequestHandler(CallToolRequestSchema, callTool);
+  return server;
+}
 
 // Initialize and start server
 async function main() {
   initializeClient();
-  
+
   const transport = new StdioServerTransport();
-  await server.connect(transport);
+  await createServer().connect(transport);
   
   console.error('LibreLink MCP Server running on stdio');
 }

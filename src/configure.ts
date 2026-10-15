@@ -2,6 +2,7 @@
 
 import * as readline from 'readline';
 import { ConfigManager } from './config.js';
+import { GlucoseUnits, toDisplay, fromDisplay } from './units.js';
 
 const rl = readline.createInterface({
   input: process.stdin,
@@ -32,9 +33,18 @@ async function main() {
   const regionChoice = await question(`Choose region (1 or 2, current: ${currentConfig.client.region}): `);
   const region = regionChoice === '2' ? 'EU' : 'US';
 
-  // Configure target ranges
-  const targetLow = await question(`Target glucose low (mg/dL, current: ${currentConfig.ranges.target_low}): `);
-  const targetHigh = await question(`Target glucose high (mg/dL, current: ${currentConfig.ranges.target_high}): `);
+  // Configure display units
+  console.log('\nGlucose units:');
+  console.log('1. mg/dL (United States)');
+  console.log('2. mmol/L (UK, Europe, South Africa, Australia)');
+  const unitsChoice = await question(`Choose units (1 or 2, current: ${currentConfig.display.units}): `);
+  const units: GlucoseUnits = unitsChoice === '2'
+    ? 'mmol/L'
+    : unitsChoice === '1' ? 'mg/dL' : currentConfig.display.units;
+
+  // Configure target ranges, entered in the unit chosen above
+  const targetLow = await question(`Target glucose low (${units}, current: ${toDisplay(currentConfig.ranges.target_low, units)}): `);
+  const targetHigh = await question(`Target glucose high (${units}, current: ${toDisplay(currentConfig.ranges.target_high, units)}): `);
 
   // Update configuration
   if (email.trim()) {
@@ -42,12 +52,13 @@ async function main() {
   }
   
   configManager.updateRegion(region as 'US' | 'EU');
-  
+  configManager.updateUnits(units);
+
   if (targetLow.trim() && targetHigh.trim()) {
-    const low = parseInt(targetLow);
-    const high = parseInt(targetHigh);
+    const low = parseFloat(targetLow);
+    const high = parseFloat(targetHigh);
     if (!isNaN(low) && !isNaN(high)) {
-      configManager.updateRanges(low, high);
+      configManager.updateRanges(fromDisplay(low, units), fromDisplay(high, units));
     }
   }
 

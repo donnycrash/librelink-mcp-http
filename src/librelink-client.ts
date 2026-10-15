@@ -168,40 +168,44 @@ export class LibreLinkClient {
     await this.ensureLoggedIn();
 
     try {
-      // Since fetchConnections has issues, just create sensor info from user data
-      const user = this.client.me;
-      
-      // Try to get a current reading to verify sensor is active
-      let isActive = false;
-      try {
-        const reading = await this.client.read();
-        isActive = reading && reading.value > 0;
-      } catch (readError) {
-        // If read fails, sensor might not be active
-        isActive = false;
+      const response: any = await this.client.fetchReading();
+      const activeSensors = response?.data?.activeSensors ?? [];
+
+      if (!activeSensors.length) {
+        throw this.createError('NO_ACTIVE_SENSOR', 'No active sensor found on this account');
       }
-      
-      const sensors: SensorInfo[] = [{
-        deviceId: user && user.id ? user.id : 'sensor-1',
-        serialNumber: 'FreeStyle-Libre-3',
-        activationTime: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000), // Assume 7 days ago
-        state: isActive ? 'Active' : 'Unknown',
-        deviceType: 'FreeStyle Libre 3'
-      }];
+
+      const sensors: SensorInfo[] = activeSensors.map((entry: any) => {
+        const sensor = entry.sensor;
+        // The API reports activation as epoch seconds and warmup in minutes.
+        const activationTime = new Date(sensor.a * 1000);
+        const warmupMinutes = sensor.w ?? 0;
+        const readyTime = new Date(activationTime.getTime() + warmupMinutes * 60 * 1000);
+
+        return {
+          deviceId: sensor.deviceId || entry.device?.did || 'unknown',
+          serialNumber: sensor.sn,
+          activationTime,
+          warmupMinutes,
+          readyTime,
+          state: Date.now() < readyTime.getTime() ? 'Warming up' : 'Active',
+          deviceType: this.describeSensor(sensor.pt)
+        };
+      });
 
       this.setCachedData(cacheKey, sensors);
       return sensors;
     } catch (error) {
-      // If we can't get sensor info, return a basic response
-      const sensors: SensorInfo[] = [{
-        deviceId: 'sensor-unknown',
-        serialNumber: 'unknown',
-        activationTime: new Date(),
-        state: 'Unknown',
-        deviceType: 'FreeStyle Libre'
-      }];
-      
-      return sensors;
+      throw this.createError('SENSOR_INFO_FAILED', 'Failed to read sensor information', error);
+    }
+  }
+
+  // Only product types confirmed against real API responses are named here;
+  // anything else reports the raw value rather than guessing at a model.
+  private describeSensor(productType?: number): string {
+    switch (productType) {
+      case 3: return 'FreeStyle Libre 3';
+      default: return `FreeStyle Libre (product type ${productType ?? 'unknown'})`;
     }
   }
 
