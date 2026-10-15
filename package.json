@@ -25,16 +25,17 @@
     "install:global": "npm run build && npm install -g ."
   },
   "keywords": ["mcp", "librelink", "glucose", "diabetes", "cgm", "freestyle-libre", "continuous-glucose-monitoring", "health", "medical", "claude"],
-  "author": "Amandeep Khurana <amansk@gmail.com>",
+  "author": "Donovan Crewe",
+  "contributors": ["Amandeep Khurana <amansk@gmail.com>"],
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/amansk/librelink-mcp-server.git"
+    "url": "git+https://github.com/donnycrash/librelink-mcp-http.git"
   },
   "bugs": {
-    "url": "https://github.com/amansk/librelink-mcp-server/issues"
+    "url": "https://github.com/donnycrash/librelink-mcp-http/issues"
   },
-  "homepage": "https://github.com/amansk/librelink-mcp-server#readme",
+  "homepage": "https://github.com/donnycrash/librelink-mcp-http#readme",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.3",
     "libre-link-unofficial-api": "^1.0.0-alpha.7",
