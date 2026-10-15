@@ -254,7 +254,9 @@ platform health checks. The included `Dockerfile` builds that entrypoint.
    Northflank issues a `*.code.run` URL with TLS.
 4. Create a **Secret group** with `LIBRELINK_EMAIL`, `LIBRELINK_PASSWORD`,
    `LIBRELINK_REGION`, and `MCP_AUTH_TOKEN` (for example
-   `openssl rand -hex 32`), and link it to the service.
+   `openssl rand -hex 32`), and link it to the service. The Dockerfile
+   defaults `LIBRE_LINK_UP_VERSION` to `4.16.0`; add it to the group only if
+   Abbott starts reporting a higher `minimumVersion`.
 5. Set the health check to HTTP `GET /health` on port `3000`.
 6. Run a single replica. The glucose cache and the LibreLink login session live
    in process memory, and multiple replicas would each log in to Abbott
