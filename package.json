@@ -11,13 +11,16 @@
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
+    "start:http": "node dist/http.js",
     "dev": "ts-node src/index.ts",
     "configure": "node dist/configure.js",
     "lint": "echo 'No linting configured'",
     "typecheck": "tsc --noEmit",
-    "test": "npm run test:mcp && npm run test:analytics",
+    "test": "npm run test:mcp && npm run test:analytics && npm run test:config && npm run test:http",
     "test:mcp": "node test-mcp.js",
     "test:analytics": "node test-analytics.js",
+    "test:config": "node test-config.js",
+    "test:http": "node test-http.js",
     "prepack": "npm run build",
     "install:global": "npm run build && npm install -g ."
   },

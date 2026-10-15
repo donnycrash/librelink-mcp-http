@@ -221,6 +221,74 @@ Timestamps are given in both the host timezone and UTC.
 |----------|---------|---------|
 | `LIBRE_LINK_UP_VERSION` | `4.7.0` (set by the API library) | Client version sent to Abbott. Must meet the API's current `minimumVersion` or requests fail with `403` / status `920`. |
 | `LIBRELINK_MCP_CONFIG_DIR` | `~/.librelink-mcp` | Directory holding `config.json`. Override to keep separate profiles, or to avoid touching a real configuration. |
+| `LIBRELINK_EMAIL` | unset | LibreLink account email. Overrides the value in `config.json`. |
+| `LIBRELINK_PASSWORD` | unset | LibreLink account password. Overrides the value in `config.json`. |
+| `LIBRELINK_REGION` | from config (`US`) | `US` or `EU`. Overrides the value in `config.json`. |
+| `LIBRELINK_UNITS` | from config (`mg/dL`) | `mg/dL` or `mmol/L`. Overrides the value in `config.json`. |
+| `MCP_AUTH_TOKEN` | unset | **HTTP mode only.** Bearer token every request to `/mcp` must present. The HTTP server refuses to start without it. |
+| `PORT` | `3000` | **HTTP mode only.** Port the HTTP server listens on. |
+
+Environment values take precedence over `config.json`, so an injected secret is
+never shadowed by a stale file. Invalid `LIBRELINK_REGION` or `LIBRELINK_UNITS`
+values are ignored with a warning.
+
+## ☁️ Remote Deployment (Northflank)
+
+The default `dist/index.js` speaks MCP over stdio, which only works when a
+client launches it as a child process. For a hosted deployment the server also
+ships a Streamable HTTP entrypoint, `dist/http.js`, that listens on `PORT`,
+exposes `POST /mcp` behind bearer-token auth, and answers `GET /health` for
+platform health checks. The included `Dockerfile` builds that entrypoint.
+
+> Hosting this server moves your LibreLink password and glucose history onto a
+> third-party platform. The local-only privacy posture described below does not
+> apply to a remote deployment. Keep `MCP_AUTH_TOKEN` long and random and treat
+> the URL as sensitive.
+
+### Northflank setup
+
+1. Create a project, then add a **Combined service** linked to this repository
+   and branch.
+2. Build type **Dockerfile**, path `/Dockerfile`.
+3. Under **Networking**, add port `3000`, protocol HTTP, publicly exposed.
+   Northflank issues a `*.code.run` URL with TLS.
+4. Create a **Secret group** with `LIBRELINK_EMAIL`, `LIBRELINK_PASSWORD`,
+   `LIBRELINK_REGION`, and `MCP_AUTH_TOKEN` (for example
+   `openssl rand -hex 32`), and link it to the service.
+5. Set the health check to HTTP `GET /health` on port `3000`.
+6. Run a single replica. The glucose cache and the LibreLink login session live
+   in process memory, and multiple replicas would each log in to Abbott
+   separately.
+
+### Connecting a client
+
+```bash
+# Claude Code
+claude mcp add --transport http librelink https://<your-service>.code.run/mcp \
+  --header "Authorization: Bearer <MCP_AUTH_TOKEN>"
+```
+
+In Claude Desktop, add the same URL as a remote connector with the
+`Authorization: Bearer <MCP_AUTH_TOKEN>` header.
+
+### Running the HTTP server locally
+
+```bash
+npm run build
+MCP_AUTH_TOKEN=dev-token npm run start:http
+curl http://localhost:3000/health
+```
+
+Or with Docker:
+
+```bash
+docker build -t librelink-mcp .
+docker run --rm -p 3000:3000 \
+  -e MCP_AUTH_TOKEN=dev-token \
+  -e LIBRELINK_EMAIL=you@example.com \
+  -e LIBRELINK_PASSWORD=secret \
+  librelink-mcp
+```
 
 ## 🔧 Development
 
@@ -235,6 +303,12 @@ npm run test:mcp
 
 # Test analytics with mock data
 npm run test:analytics
+
+# Test environment-variable config overrides
+npm run test:config
+
+# Test the HTTP entrypoint (health, auth, tools/list)
+npm run test:http
 
 # Test with real LibreLink data (requires configuration)
 node test-real-data.js

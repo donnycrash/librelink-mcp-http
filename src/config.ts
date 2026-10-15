@@ -30,6 +30,36 @@ export const DEFAULT_CONFIG: LibreLinkConfig = {
   }
 };
 
+const REGIONS = ['US', 'EU'] as const;
+const UNITS: GlucoseUnits[] = ['mg/dL', 'mmol/L'];
+
+// Hosted deployments have no interactive configure step and no durable home
+// directory, so credentials may arrive through the environment. Env wins over
+// the file so a stale config.json cannot shadow an injected secret.
+function applyEnvOverrides(config: LibreLinkConfig): LibreLinkConfig {
+  const { LIBRELINK_EMAIL, LIBRELINK_PASSWORD, LIBRELINK_REGION, LIBRELINK_UNITS } = process.env;
+
+  const region = REGIONS.find(r => r === LIBRELINK_REGION?.toUpperCase());
+  if (LIBRELINK_REGION && !region) {
+    console.warn(`Ignoring LIBRELINK_REGION="${LIBRELINK_REGION}"; expected one of ${REGIONS.join(', ')}`);
+  }
+
+  const units = UNITS.find(u => u.toLowerCase() === LIBRELINK_UNITS?.toLowerCase());
+  if (LIBRELINK_UNITS && !units) {
+    console.warn(`Ignoring LIBRELINK_UNITS="${LIBRELINK_UNITS}"; expected one of ${UNITS.join(', ')}`);
+  }
+
+  return {
+    ...config,
+    credentials: {
+      email: LIBRELINK_EMAIL ?? config.credentials.email,
+      password: LIBRELINK_PASSWORD ?? config.credentials.password
+    },
+    client: { ...config.client, region: region ?? config.client.region },
+    display: { ...config.display, units: units ?? config.display.units }
+  };
+}
+
 export class ConfigManager {
   private config: LibreLinkConfig;
 
@@ -38,6 +68,10 @@ export class ConfigManager {
   }
 
   private loadConfig(): LibreLinkConfig {
+    return applyEnvOverrides(this.loadConfigFile());
+  }
+
+  private loadConfigFile(): LibreLinkConfig {
     if (!existsSync(CONFIG_FILE)) {
       return { ...DEFAULT_CONFIG };
     }

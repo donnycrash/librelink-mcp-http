@@ -15,24 +15,12 @@ import { ConfigManager } from './config.js';
 import { MCPError } from './types.js';
 import { GlucoseUnits, toDisplay, fromDisplay, formatValue, formatRange } from './units.js';
 
-const server = new Server(
-  {
-    name: 'librelink-mcp-server',
-    version: '1.0.0'
-  },
-  {
-    capabilities: {
-      tools: {}
-    }
-  }
-);
-
 const configManager = new ConfigManager();
 let client: LibreLinkClient | null = null;
 let analytics: GlucoseAnalytics | null = null;
 
 // Initialize client if configured
-function initializeClient(): void {
+export function initializeClient(): void {
   const config = configManager.getConfig();
   if (configManager.isConfigured()) {
     client = new LibreLinkClient(config);
@@ -213,13 +201,9 @@ function buildTools(): Tool[] {
   ];
 }
 
-// List tools handler
-server.setRequestHandler(ListToolsRequestSchema, async () => {
-  return { tools: buildTools() };
-});
+type CallToolRequest = z.infer<typeof CallToolRequestSchema>;
 
-// Call tool handler
-server.setRequestHandler(CallToolRequestSchema, async (request) => {
+async function callTool(request: CallToolRequest) {
   const { name, arguments: args } = request.params;
 
   try {
@@ -442,14 +426,26 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   } catch (error) {
     return handleError(error);
   }
-});
+}
+
+// One Server instance can only be bound to a single transport, so the HTTP
+// entrypoint needs a fresh one per connection. Client and config stay shared.
+export function createServer(): Server {
+  const server = new Server(
+    { name: 'librelink-mcp-server', version: '1.0.0' },
+    { capabilities: { tools: {} } }
+  );
+  server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: buildTools() }));
+  server.setRequestHandler(CallToolRequestSchema, callTool);
+  return server;
+}
 
 // Initialize and start server
 async function main() {
   initializeClient();
-  
+
   const transport = new StdioServerTransport();
-  await server.connect(transport);
+  await createServer().connect(transport);
   
   console.error('LibreLink MCP Server running on stdio');
 }
